@@ -1,0 +1,14 @@
+{
+  "_comment": "This is the JSON the friend's algo POSTs to  https://<relay>/signal  with header  x-secret: <SENDER_SECRET>",
+  "signalId": "unique-per-signal-uuid-or-counter (used for dedupe/idempotency)",
+  "symbol": "NQ",
+  "side": "LONG",
+  "size": 2,
+  "orderType": "MARKET",
+  "limitPrice": null,
+  "stopPrice": null,
+  "trailPrice": null,
+  "stopLossTicks": 40,
+  "takeProfitTicks": 80,
+  "contractId": "optional — overrides the CONTRACTS map on the executor"
+}

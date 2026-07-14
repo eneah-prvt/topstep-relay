@@ -1,0 +1,19 @@
+{
+  "name": "topstep-relay",
+  "version": "1.0.0",
+  "description": "Relay algo order-signals from a remote PC to a local executor that trades via the Topstep ProjectX API",
+  "private": true,
+  "scripts": {
+    "start": "node relay/server.js",
+    "relay": "node relay/server.js",
+    "executor": "node executor/executor.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "ws": "^8.18.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
