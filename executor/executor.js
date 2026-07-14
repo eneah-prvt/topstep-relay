@@ -12,7 +12,7 @@
 //   - Auto re-auth on 401, auto-reconnect to relay with backoff.
 // ---------------------------------------------------------------------------
 
-require('dotenv').config();
+require('dotenv').config({ path: require('path').join(__dirname, '.env') });
 const WebSocket = require('ws');
 
 const {
@@ -156,6 +156,7 @@ async function handleSignal(signal) {
 
 // --- Relay connection with auto-reconnect ----------------------------------
 let backoff = 1000;
+let kicked = false;
 function connect() {
   if (!RELAY_URL || !RELAY_TOKEN) {
     console.error('FATAL: set RELAY_URL and RELAY_TOKEN in .env');
@@ -172,6 +173,13 @@ function connect() {
   ws.on('message', async (data) => {
     let msg;
     try { msg = JSON.parse(data.toString()); } catch { return; }
+    if (msg.type === 'kicked') {
+      console.error('[relay] KICKED —', msg.reason);
+      console.error('A newer executor took over. Exiting so two executors can never place duplicate orders.');
+      kicked = true;
+      try { ws.close(); } catch { /* ignore */ }
+      return;
+    }
     if (msg.type !== 'signal') return;
     try {
       const result = await handleSignal(msg.signal);
@@ -182,7 +190,11 @@ function connect() {
     }
   });
 
-  ws.on('close', () => {
+  ws.on('close', (code) => {
+    if (kicked || code === 4000) {
+      console.error('[relay] this executor was replaced by a newer one — NOT reconnecting. Exiting.');
+      process.exit(0);
+    }
     console.log(`[relay] disconnected — reconnecting in ${backoff}ms`);
     setTimeout(connect, backoff);
     backoff = Math.min(backoff * 2, 30000);

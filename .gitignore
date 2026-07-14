@@ -3,3 +3,8 @@ node_modules/
 relay/.env
 executor/.env
 *.log
+
+# Enthalten Secrets — nur lokal, nicht committen:
+ANLEITUNG-FUER-FREUND.md
+CHECKLISTE-VOR-START.md
+GUIDE-FOR-FRIEND.md

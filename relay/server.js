@@ -50,6 +50,15 @@ server.on('upgrade', (req, socket, head) => {
 });
 
 wss.on('connection', (ws) => {
+  // SAFETY: only ONE executor may be active at a time. A second live executor
+  // would place duplicate orders. So when a new one connects, kick any existing
+  // ones (newest wins). This neutralises orphaned/duplicate executor processes.
+  for (const old of executors) {
+    try { old.send(JSON.stringify({ type: 'kicked', reason: 'replaced by a newer executor' })); } catch { /* ignore */ }
+    try { old.close(4000, 'replaced'); } catch { /* ignore */ }
+    executors.delete(old);
+  }
+
   ws.isAlive = true;
   executors.add(ws);
   console.log(`[ws] executor connected — total ${executors.size}`);
