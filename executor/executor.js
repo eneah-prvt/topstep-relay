@@ -74,14 +74,31 @@ async function api(path, body, retryOn401 = true) {
   return { status: res.status, json };
 }
 
-// Resolve the first active account if PROJECTX_ACCOUNT_ID was not provided.
-// NOTE: verify this endpoint/body against the live docs for your firm.
-async function resolveAccount() {
+// Look up the target account and print it in plain text, so it is always
+// obvious WHICH account will be traded. Auto-resolves if none was pinned.
+async function describeAccount() {
   const { json } = await api('/api/Account/search', { onlyActiveAccounts: true });
-  const acc = (json.accounts || [])[0];
-  if (!acc) throw new Error('Could not resolve an active account. Set PROJECTX_ACCOUNT_ID.');
-  accountId = acc.id;
-  console.log('[account] resolved accountId', accountId);
+  const accounts = json.accounts || [];
+
+  if (!accountId) {
+    const acc = accounts[0];
+    if (!acc) throw new Error('Could not resolve an active account. Set PROJECTX_ACCOUNT_ID.');
+    accountId = acc.id;
+    console.log(`[account] AUTO-RESOLVED ${acc.id} | ${acc.name} | balance=${acc.balance}`);
+    console.warn('[account] WARNING: no PROJECTX_ACCOUNT_ID pinned — pin it to be safe.');
+    return;
+  }
+
+  const acc = accounts.find((a) => a.id === accountId);
+  if (!acc) {
+    console.warn(`[account] WARNING: pinned accountId ${accountId} was not found among your active accounts.`);
+    return;
+  }
+  const isDemo = /^PRAC/i.test(acc.name);
+  console.log(`[account] using ${acc.id} | ${acc.name} | balance=${acc.balance}`);
+  console.log(isDemo
+    ? '[account] ✅ DEMO / practice account — safe.'
+    : '[account] 🔴 WARNING: this is NOT a practice account (name does not start with PRAC)!');
 }
 
 // --- Signal -> order translation -------------------------------------------
@@ -208,7 +225,7 @@ function connect() {
   console.log(`  base=${PROJECTX_BASE}  dryRun=${dryRun}  maxSize=${maxSize}  allowed=${allowed.join(',') || '(all)'}`);
   try {
     await authenticate();          // fail fast on bad creds
-    if (!accountId) await resolveAccount();
+    await describeAccount();       // always show which account will be traded
   } catch (e) {
     console.error('[boot] warning:', e.message, '\n(will retry lazily on first signal)');
   }
