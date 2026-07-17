@@ -58,17 +58,30 @@ server.on('upgrade', (req, socket, head) => {
     socket.destroy();
     return;
   }
-  wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req));
+  const instanceId = url.searchParams.get('instance') || 'unknown';
+  wss.handleUpgrade(req, socket, head, (ws) => {
+    ws.instanceId = instanceId;
+    wss.emit('connection', ws, req);
+  });
 });
 
 wss.on('connection', (ws) => {
-  // SAFETY: only ONE executor may be active at a time. A second live executor
-  // would place duplicate orders. So when a new one connects, kick any existing
-  // ones (newest wins). This neutralises orphaned/duplicate executor processes.
+  // SAFETY: only ONE executor process may be active at a time — two would place
+  // duplicate orders. But distinguish the two cases by instanceId, otherwise an
+  // executor reconnecting after a blip would kick (and thereby kill) itself:
+  //   same instanceId  -> same process reconnecting: drop the stale socket quietly
+  //   different id     -> a genuine second process: kick the old one
   for (const old of executors) {
-    try { old.send(JSON.stringify({ type: 'kicked', reason: 'replaced by a newer executor' })); } catch { /* ignore */ }
-    try { old.close(4000, 'replaced'); } catch { /* ignore */ }
-    executors.delete(old);
+    if (old.instanceId === ws.instanceId) {
+      try { old.terminate(); } catch { /* ignore */ }
+      executors.delete(old);
+      console.log(`[ws] same instance ${ws.instanceId} reconnected — dropped stale socket`);
+    } else {
+      try { old.send(JSON.stringify({ type: 'kicked', reason: 'replaced by a newer executor' })); } catch { /* ignore */ }
+      try { old.close(4000, 'replaced'); } catch { /* ignore */ }
+      executors.delete(old);
+      console.log(`[ws] kicked older executor instance ${old.instanceId}`);
+    }
   }
 
   ws.isAlive = true;

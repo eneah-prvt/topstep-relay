@@ -174,13 +174,20 @@ async function handleSignal(signal) {
 // --- Relay connection with auto-reconnect ----------------------------------
 let backoff = 1000;
 let kicked = false;
+// Identifies THIS process. Lets the relay tell "same executor reconnecting"
+// (replace silently) apart from "a second executor started" (kick the old one).
+const INSTANCE_ID = require('crypto').randomUUID();
+let currentWs = null;
 function connect() {
   if (!RELAY_URL || !RELAY_TOKEN) {
     console.error('FATAL: set RELAY_URL and RELAY_TOKEN in .env');
     process.exit(1);
   }
-  const url = `${RELAY_URL.replace(/\/$/, '')}/executor?token=${encodeURIComponent(RELAY_TOKEN)}`;
+  const url = `${RELAY_URL.replace(/\/$/, '')}/executor`
+    + `?token=${encodeURIComponent(RELAY_TOKEN)}`
+    + `&instance=${encodeURIComponent(INSTANCE_ID)}`;
   const ws = new WebSocket(url);
+  currentWs = ws;
 
   ws.on('open', () => {
     backoff = 1000;
@@ -188,11 +195,12 @@ function connect() {
   });
 
   ws.on('message', async (data) => {
+    if (ws !== currentWs) return;            // ignore events from a stale socket
     let msg;
     try { msg = JSON.parse(data.toString()); } catch { return; }
     if (msg.type === 'kicked') {
       console.error('[relay] KICKED —', msg.reason);
-      console.error('A newer executor took over. Exiting so two executors can never place duplicate orders.');
+      console.error('Another executor process took over. Exiting so two executors can never place duplicate orders.');
       kicked = true;
       try { ws.close(); } catch { /* ignore */ }
       return;
@@ -208,15 +216,19 @@ function connect() {
   });
 
   ws.on('close', (code) => {
+    if (ws !== currentWs) return;            // a superseded socket closing: ignore
     if (kicked || code === 4000) {
-      console.error('[relay] this executor was replaced by a newer one — NOT reconnecting. Exiting.');
+      console.error('[relay] this executor was replaced by another process — NOT reconnecting. Exiting.');
       process.exit(0);
     }
     console.log(`[relay] disconnected — reconnecting in ${backoff}ms`);
     setTimeout(connect, backoff);
     backoff = Math.min(backoff * 2, 30000);
   });
-  ws.on('error', (e) => console.error('[relay] ws error:', e.message));
+  ws.on('error', (e) => {
+    if (ws !== currentWs) return;
+    console.error('[relay] ws error:', e.message);
+  });
 }
 
 // --- boot -------------------------------------------------------------------
